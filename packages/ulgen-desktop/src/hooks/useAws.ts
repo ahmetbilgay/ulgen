@@ -19,12 +19,16 @@ export type DiscoveryResult = {
   generated_at: string;
 };
 
-export function useAws() {
+export function useAws(enabled = true) {
   const [data, setData] = useState<DiscoveryResult | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async () => {
+    if (!enabled) {
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -39,8 +43,12 @@ export function useAws() {
   };
 
   useEffect(() => {
-    void refresh();
-  }, []);
+    if (enabled) {
+      void refresh();
+    } else {
+      setIsLoading(false);
+    }
+  }, [enabled]);
 
   return { data, isLoading, error, refresh };
 }

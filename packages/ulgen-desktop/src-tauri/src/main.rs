@@ -25,12 +25,12 @@ async fn fetch_instances(state: tauri::State<'_, AppState>) -> Result<DiscoveryR
         .map_err(|error| error.to_string())
 }
 
-fn apply_native_effects(window: &tauri::WebviewWindow) {
+fn apply_native_effects(_window: &tauri::WebviewWindow) {
     #[cfg(target_os = "macos")]
-    let _ = apply_vibrancy(window, NSVisualEffectMaterial::HudWindow, None, None);
+    let _ = apply_vibrancy(_window, NSVisualEffectMaterial::HudWindow, None, None);
 
     #[cfg(target_os = "windows")]
-    let _ = apply_mica(window, None);
+    let _ = apply_mica(_window, None);
 }
 
 fn main() {
