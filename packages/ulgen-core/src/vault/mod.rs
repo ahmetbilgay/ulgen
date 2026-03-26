@@ -43,19 +43,22 @@ impl SecretVault {
 
     pub fn store(secret_name: &str, secret_value: &str) -> Result<()> {
         let path = Self::secret_path(secret_name)?;
-        fs::write(&path, secret_value).with_context(|| format!("failed to store secret at {}", path.display()))?;
+        fs::write(&path, secret_value)
+            .with_context(|| format!("failed to store secret at {}", path.display()))?;
         Ok(())
     }
 
     pub fn load(secret_name: &str) -> Result<String> {
         let path = Self::secret_path(secret_name)?;
-        fs::read_to_string(&path).with_context(|| format!("failed to load secret from {}", path.display()))
+        fs::read_to_string(&path)
+            .with_context(|| format!("failed to load secret from {}", path.display()))
     }
 
     pub fn delete(secret_name: &str) -> Result<()> {
         let path = Self::secret_path(secret_name)?;
         if path.exists() {
-            fs::remove_file(&path).with_context(|| format!("failed to delete secret at {}", path.display()))?;
+            fs::remove_file(&path)
+                .with_context(|| format!("failed to delete secret at {}", path.display()))?;
         }
         Ok(())
     }

@@ -282,7 +282,10 @@ async fn write_terminal_input(
         .write_all(input.as_bytes())
         .await
         .map_err(|error| error.to_string())?;
-    writer.write_all(b"\n").await.map_err(|error| error.to_string())?;
+    writer
+        .write_all(b"\n")
+        .await
+        .map_err(|error| error.to_string())?;
     writer.flush().await.map_err(|error| error.to_string())
 }
 
@@ -294,7 +297,9 @@ async fn close_terminal_session(
     let session = app_state.terminal_sessions.lock().await.remove(&session_id);
 
     if let Some(session) = session {
-        session.running.store(false, std::sync::atomic::Ordering::Relaxed);
+        session
+            .running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         let mut child = session.child.lock().await;
         child.kill().await.map_err(|error| error.to_string())?;
     }

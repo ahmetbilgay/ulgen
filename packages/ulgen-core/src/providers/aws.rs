@@ -3,7 +3,6 @@ use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_config::meta::region::RegionProviderChain;
@@ -16,9 +15,12 @@ use aws_sdk_ec2::types::{
 };
 use chrono::{TimeZone, Utc};
 use tokio::task::JoinSet;
+use tracing::{debug, error, info, instrument, warn};
 use ulgen_api_proto::{DiscoveryResult, InstanceSummary};
 
+use crate::error::{ProviderError, Result};
 use crate::{CloudProvider, SecurityGroupRule};
+use crate::{log_provider_operation, time_operation};
 
 #[derive(Debug, Clone)]
 pub struct AwsProvider {
@@ -28,8 +30,11 @@ pub struct AwsProvider {
 
 impl AwsProvider {
     pub fn new(default_region: impl Into<String>) -> Self {
+        let default_region = default_region.into();
+        info!(provider = "aws", region = %default_region, "Creating AWS provider");
+
         Self {
-            default_region: default_region.into(),
+            default_region,
             credentials: None,
         }
     }
@@ -40,6 +45,20 @@ impl AwsProvider {
         secret_access_key: impl Into<String>,
         session_token: Option<String>,
     ) -> Self {
+        let default_region = default_region.into();
+        let access_key_id = access_key_id.into();
+
+        debug!(
+            provider = "aws",
+            region = %default_region,
+            access_key_preview = %format!("{}****{}",
+                &access_key_id[..4.min(access_key_id.len())],
+                &access_key_id[access_key_id.len().saturating_sub(4)..]
+            ),
+            has_session_token = session_token.is_some(),
+            "Creating AWS provider with credentials"
+        );
+
         let credentials = Credentials::new(
             access_key_id,
             secret_access_key,
@@ -49,12 +68,15 @@ impl AwsProvider {
         );
 
         Self {
-            default_region: default_region.into(),
+            default_region,
             credentials: Some(SharedCredentialsProvider::new(credentials)),
         }
     }
 
+    #[instrument(skip(self), fields(provider = "aws", region = %region))]
     async fn client_for_region(&self, region: &str) -> Result<Client> {
+        debug!("Creating AWS client for region");
+
         let region_provider = RegionProviderChain::first_try(Some(Region::new(region.to_owned())))
             .or_default_provider()
             .or_else(Region::new(self.default_region.clone()));
@@ -65,13 +87,32 @@ impl AwsProvider {
         }
 
         let config = loader.load().await;
+        let client = Client::new(&config);
 
-        Ok(Client::new(&config))
+        debug!("AWS client created successfully");
+        Ok(client)
     }
 
+    #[instrument(skip(self), fields(provider = "aws"))]
     pub async fn list_regions(&self) -> Result<Vec<String>> {
-        let client = self.client_for_region(&self.default_region).await?;
-        let response = client.describe_regions().send().await?;
+        debug!("Listing AWS regions");
+
+        let client = self
+            .client_for_region(&self.default_region)
+            .await
+            .map_err(|_e| ProviderError::ServiceUnavailable {
+                provider: "aws".to_string(),
+                region: Some(self.default_region.clone()),
+            })?;
+
+        let response = client.describe_regions().send().await.map_err(|e| {
+            error!(error = %e, "Failed to describe regions");
+            ProviderError::ApiError {
+                provider: "aws".to_string(),
+                code: "DescribeRegions".to_string(),
+                message: e.to_string(),
+            }
+        })?;
 
         let mut regions = response
             .regions
@@ -81,22 +122,46 @@ impl AwsProvider {
             .collect::<Vec<_>>();
 
         if regions.is_empty() {
+            warn!("No regions returned from AWS API, using default region");
             regions.push(self.default_region.clone());
         }
 
         regions.sort();
         regions.dedup();
 
+        info!(
+            region_count = regions.len(),
+            "Successfully listed AWS regions"
+        );
         Ok(regions)
     }
 
+    #[instrument(skip(self), fields(provider = "aws", region = %region))]
     async fn fetch_instances_in_region(&self, region: String) -> Result<Vec<InstanceSummary>> {
-        let client = self.client_for_region(&region).await?;
-        let response = client.describe_instances().send().await?;
+        debug!("Fetching instances in region");
+
+        let client = self.client_for_region(&region).await.map_err(|_e| {
+            ProviderError::ServiceUnavailable {
+                provider: "aws".to_string(),
+                region: Some(region.clone()),
+            }
+        })?;
+
+        let response = client.describe_instances().send().await.map_err(|e| {
+            error!(error = %e, "Failed to describe instances");
+            ProviderError::ApiError {
+                provider: "aws".to_string(),
+                code: "DescribeInstances".to_string(),
+                message: e.to_string(),
+            }
+        })?;
+
         let mut instances = Vec::new();
 
         for reservation in response.reservations.unwrap_or_default() {
             for instance in reservation.instances.unwrap_or_default() {
+                let instance_id = instance.instance_id.unwrap_or_else(|| "unknown".to_owned());
+
                 let name = instance
                     .tags
                     .as_ref()
@@ -105,22 +170,26 @@ impl AwsProvider {
                             .find(|tag| tag.key.as_deref() == Some("Name"))
                             .and_then(|tag| tag.value.clone())
                     })
-                    .unwrap_or_else(|| {
-                        instance
-                            .instance_id
-                            .clone()
-                            .unwrap_or_else(|| "unnamed".to_owned())
-                    });
+                    .unwrap_or_else(|| instance_id.clone());
+
+                let state = instance
+                    .state
+                    .and_then(|state| state.name)
+                    .map(|state| state.as_str().to_owned())
+                    .unwrap_or_else(|| "unknown".to_owned());
+
+                debug!(
+                    instance_id = %instance_id,
+                    instance_name = %name,
+                    instance_state = %state,
+                    "Found instance"
+                );
 
                 instances.push(InstanceSummary {
-                    id: instance.instance_id.unwrap_or_else(|| "unknown".to_owned()),
+                    id: instance_id,
                     name,
                     region: region.clone(),
-                    state: instance
-                        .state
-                        .and_then(|state| state.name)
-                        .map(|state| state.as_str().to_owned())
-                        .unwrap_or_else(|| "unknown".to_owned()),
+                    state,
                     public_ip: instance.public_ip_address,
                     private_ip: instance.private_ip_address,
                     instance_type: instance.instance_type.map(|kind| kind.as_str().to_owned()),
@@ -133,6 +202,10 @@ impl AwsProvider {
             }
         }
 
+        info!(
+            instance_count = instances.len(),
+            "Successfully fetched instances"
+        );
         Ok(instances)
     }
 }
@@ -159,14 +232,21 @@ impl DiscoveryEngine {
         Self { provider }
     }
 
+    #[instrument(skip(self), fields(provider = "aws"))]
     pub async fn discover_instances(&self) -> Result<DiscoveryResult> {
+        info!("Starting instance discovery across all regions");
+
         let regions = self.provider.list_regions().await?;
+        let region_count = regions.len();
+        info!(region_count, "Discovered regions, starting parallel scan");
+
         let mut tasks = JoinSet::new();
 
         for region in &regions {
             let provider = Arc::clone(&self.provider);
             let region = region.clone();
             tasks.spawn(async move {
+                debug!(region = %region, "Starting region scan");
                 let result = provider.fetch_instances_in_region(region.clone()).await;
                 (region, result)
             });
@@ -174,16 +254,32 @@ impl DiscoveryEngine {
 
         let mut discovered_regions = BTreeSet::new();
         let mut instances = Vec::new();
+        let mut failed_regions = Vec::new();
 
         while let Some(joined) = tasks.join_next().await {
-            let (region, result) = joined?;
+            let (region, result) = joined.map_err(|e| ProviderError::ApiError {
+                provider: "aws".to_string(),
+                code: "TaskJoin".to_string(),
+                message: e.to_string(),
+            })?;
 
             match result {
                 Ok(mut region_instances) => {
+                    info!(
+                        region = %region,
+                        instance_count = region_instances.len(),
+                        "Successfully scanned region"
+                    );
                     discovered_regions.insert(region);
                     instances.append(&mut region_instances);
                 }
-                Err(_error) => {
+                Err(error) => {
+                    warn!(
+                        region = %region,
+                        error = %error,
+                        "Failed to scan region, skipping"
+                    );
+                    failed_regions.push(region);
                     // Skip inaccessible or opt-in-disabled regions so one region does not break the whole dashboard.
                     continue;
                 }
@@ -195,6 +291,17 @@ impl DiscoveryEngine {
                 .cmp(&right.region)
                 .then(left.name.cmp(&right.name))
         });
+
+        info!(
+            total_instances = instances.len(),
+            successful_regions = discovered_regions.len(),
+            failed_regions = failed_regions.len(),
+            "Instance discovery completed"
+        );
+
+        if !failed_regions.is_empty() {
+            warn!(failed_regions = ?failed_regions, "Some regions failed to scan");
+        }
 
         Ok(DiscoveryResult {
             provider: "aws".to_owned(),
@@ -211,43 +318,113 @@ impl CloudProvider for AwsProvider {
         "aws"
     }
 
+    #[instrument(skip(self), fields(provider = "aws"))]
     async fn fetch_instances(&self) -> Result<DiscoveryResult> {
-        DiscoveryEngine::new(Arc::new(self.clone()))
-            .discover_instances()
-            .await
+        log_provider_operation!(info, "aws", "fetch_instances",);
+
+        time_operation!("aws_fetch_instances", {
+            DiscoveryEngine::new(Arc::new(self.clone()))
+                .discover_instances()
+                .await
+        })
     }
 
+    #[instrument(skip(self), fields(provider = "aws", region = %region, instance_id = %instance_id))]
     async fn start_instance(&self, region: &str, instance_id: &str) -> Result<()> {
-        self.client_for_region(region)
-            .await?
+        log_provider_operation!(
+            info,
+            "aws",
+            "start_instance",
+            region = region,
+            instance_id = instance_id
+        );
+
+        let client = self.client_for_region(region).await.map_err(|_e| {
+            ProviderError::ServiceUnavailable {
+                provider: "aws".to_string(),
+                region: Some(region.to_string()),
+            }
+        })?;
+
+        client
             .start_instances()
             .instance_ids(instance_id)
             .send()
             .await
-            .with_context(|| format!("failed to start instance {instance_id} in {region}"))?;
+            .map_err(|e| {
+                error!(error = %e, "Failed to start instance");
+                ProviderError::ApiError {
+                    provider: "aws".to_string(),
+                    code: "StartInstances".to_string(),
+                    message: format!("Failed to start instance {}: {}", instance_id, e),
+                }
+            })?;
 
+        info!("Instance started successfully");
         Ok(())
     }
 
+    #[instrument(skip(self), fields(provider = "aws", region = %region, instance_id = %instance_id))]
     async fn stop_instance(&self, region: &str, instance_id: &str) -> Result<()> {
-        self.client_for_region(region)
-            .await?
+        log_provider_operation!(
+            info,
+            "aws",
+            "stop_instance",
+            region = region,
+            instance_id = instance_id
+        );
+
+        let client = self.client_for_region(region).await.map_err(|_e| {
+            ProviderError::ServiceUnavailable {
+                provider: "aws".to_string(),
+                region: Some(region.to_string()),
+            }
+        })?;
+
+        client
             .stop_instances()
             .instance_ids(instance_id)
             .send()
             .await
-            .with_context(|| format!("failed to stop instance {instance_id} in {region}"))?;
+            .map_err(|e| {
+                error!(error = %e, "Failed to stop instance");
+                ProviderError::ApiError {
+                    provider: "aws".to_string(),
+                    code: "StopInstances".to_string(),
+                    message: format!("Failed to stop instance {}: {}", instance_id, e),
+                }
+            })?;
 
+        info!("Instance stopped successfully");
         Ok(())
     }
 
+    #[instrument(skip(self), fields(
+        provider = "aws",
+        region = %region,
+        security_group_id = %security_group_id,
+        protocol = %rule.protocol,
+        from_port = rule.from_port,
+        to_port = rule.to_port
+    ))]
     async fn authorize_ip(
         &self,
         region: &str,
         security_group_id: &str,
         rule: SecurityGroupRule,
     ) -> Result<()> {
+        log_provider_operation!(
+            info,
+            "aws",
+            "authorize_ip",
+            region = region,
+            security_group_id = security_group_id,
+            cidr = rule.cidr,
+            protocol = rule.protocol
+        );
+
         let ip = normalize_cidr(&rule.cidr);
+        debug!(original_cidr = %rule.cidr, normalized_cidr = %ip, "Normalized CIDR");
 
         let protocol = rule.protocol.to_lowercase();
         let permission = IpPermission::builder()
@@ -256,7 +433,7 @@ impl CloudProvider for AwsProvider {
             .to_port(rule.to_port)
             .ip_ranges(
                 IpRange::builder()
-                    .cidr_ip(ip)
+                    .cidr_ip(ip.clone())
                     .description(
                         rule.description
                             .unwrap_or_else(|| "ULGEN managed rule".to_owned()),
@@ -265,22 +442,52 @@ impl CloudProvider for AwsProvider {
             )
             .build();
 
-        self.client_for_region(region)
-            .await?
+        let client = self.client_for_region(region).await.map_err(|_e| {
+            ProviderError::ServiceUnavailable {
+                provider: "aws".to_string(),
+                region: Some(region.to_string()),
+            }
+        })?;
+
+        client
             .authorize_security_group_ingress()
             .group_id(security_group_id)
             .ip_permissions(permission)
             .send()
             .await
-            .with_context(|| {
-                format!("failed to authorize ingress for security group {security_group_id}")
+            .map_err(|e| {
+                error!(error = %e, "Failed to authorize security group ingress");
+                ProviderError::ApiError {
+                    provider: "aws".to_string(),
+                    code: "AuthorizeSecurityGroupIngress".to_string(),
+                    message: format!(
+                        "Failed to authorize ingress for security group {}: {}",
+                        security_group_id, e
+                    ),
+                }
             })?;
 
+        info!("Security group rule authorized successfully");
         Ok(())
     }
 
+    #[instrument(skip(self), fields(provider = "aws", region = %region, key_name = %key_name))]
     async fn create_ssh_key(&self, region: &str, key_name: &str) -> Result<String> {
-        let client = self.client_for_region(region).await?;
+        log_provider_operation!(
+            info,
+            "aws",
+            "create_ssh_key",
+            region = region,
+            key_name = key_name
+        );
+
+        let client = self.client_for_region(region).await.map_err(|_e| {
+            ProviderError::ServiceUnavailable {
+                provider: "aws".to_string(),
+                region: Some(region.to_string()),
+            }
+        })?;
+
         let response = client
             .create_key_pair()
             .key_name(key_name)
@@ -297,22 +504,60 @@ impl CloudProvider for AwsProvider {
             )
             .send()
             .await
-            .with_context(|| format!("failed to create SSH key {key_name}"))?;
+            .map_err(|e| {
+                error!(error = %e, "Failed to create SSH key pair");
+                ProviderError::ApiError {
+                    provider: "aws".to_string(),
+                    code: "CreateKeyPair".to_string(),
+                    message: format!("Failed to create SSH key {}: {}", key_name, e),
+                }
+            })?;
 
-        response
-            .key_material
-            .ok_or_else(|| anyhow!("AWS did not return key material for {key_name}"))
+        let key_material = response.key_material.ok_or_else(|| {
+            error!("AWS did not return key material");
+            ProviderError::ApiError {
+                provider: "aws".to_string(),
+                code: "CreateKeyPair".to_string(),
+                message: format!("AWS did not return key material for {}", key_name),
+            }
+        })?;
+
+        info!("SSH key pair created successfully");
+        Ok(key_material)
     }
 
+    #[instrument(skip(self), fields(provider = "aws", region = %region, key_name = %key_name))]
     async fn delete_ssh_key(&self, region: &str, key_name: &str) -> Result<()> {
-        self.client_for_region(region)
-            .await?
+        log_provider_operation!(
+            info,
+            "aws",
+            "delete_ssh_key",
+            region = region,
+            key_name = key_name
+        );
+
+        let client = self.client_for_region(region).await.map_err(|_e| {
+            ProviderError::ServiceUnavailable {
+                provider: "aws".to_string(),
+                region: Some(region.to_string()),
+            }
+        })?;
+
+        client
             .delete_key_pair()
             .key_name(key_name)
             .send()
             .await
-            .with_context(|| format!("failed to delete SSH key {key_name}"))?;
+            .map_err(|e| {
+                error!(error = %e, "Failed to delete SSH key pair");
+                ProviderError::ApiError {
+                    provider: "aws".to_string(),
+                    code: "DeleteKeyPair".to_string(),
+                    message: format!("Failed to delete SSH key {}: {}", key_name, e),
+                }
+            })?;
 
+        info!("SSH key pair deleted successfully");
         Ok(())
     }
 }
