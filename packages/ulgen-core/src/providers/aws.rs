@@ -590,6 +590,129 @@ impl CloudProvider for AwsProvider {
         Ok(summaries)
     }
 
+    #[instrument(skip(self), fields(provider = "aws", region = %region))]
+    async fn list_all_security_groups(&self, region: &str) -> Result<Vec<SecurityGroupSummary>> {
+        log_provider_operation!(info, "aws", "list_all_security_groups", region = region);
+        let client = self.client_for_region(region).await?;
+
+        let sg_response = client
+            .describe_security_groups()
+            .send()
+            .await
+            .map_err(|e| ProviderError::ApiError {
+                provider: "aws".to_string(),
+                code: "DescribeSecurityGroups".to_string(),
+                message: e.to_string(),
+            })?;
+
+        let mut summaries = Vec::new();
+        for sg in sg_response.security_groups.unwrap_or_default() {
+            let mut rules = Vec::new();
+
+            for perm in sg.ip_permissions.unwrap_or_default() {
+                rules.extend(map_ip_permission(&perm, FirewallDirection::Inbound));
+            }
+            for perm in sg.ip_permissions_egress.unwrap_or_default() {
+                rules.extend(map_ip_permission(&perm, FirewallDirection::Outbound));
+            }
+
+            summaries.push(SecurityGroupSummary {
+                id: sg.group_id.unwrap_or_default(),
+                name: sg.group_name.unwrap_or_default(),
+                rules,
+            });
+        }
+        Ok(summaries)
+    }
+
+    #[instrument(skip(self), fields(
+        provider = "aws",
+        region = %region,
+        security_group_id = %security_group_id,
+        protocol = %rule.protocol,
+        from_port = rule.from_port,
+        to_port = rule.to_port
+    ))]
+    async fn revoke_ip(
+        &self,
+        region: &str,
+        security_group_id: &str,
+        rule: SecurityGroupRule,
+    ) -> Result<()> {
+        log_provider_operation!(
+            info,
+            "aws",
+            "revoke_ip",
+            region = region,
+            security_group_id = security_group_id,
+            cidr = rule.cidr,
+            protocol = rule.protocol
+        );
+
+        let ip = normalize_cidr(&rule.cidr);
+        let permission = IpPermission::builder()
+            .ip_protocol(rule.protocol.to_lowercase())
+            .from_port(rule.from_port)
+            .to_port(rule.to_port)
+            .ip_ranges(IpRange::builder().cidr_ip(ip).build())
+            .build();
+
+        let client = self.client_for_region(region).await?;
+
+        client
+            .revoke_security_group_ingress()
+            .group_id(security_group_id)
+            .ip_permissions(permission)
+            .send()
+            .await
+            .map_err(|e| ProviderError::ApiError {
+                provider: "aws".to_string(),
+                code: "RevokeSecurityGroupIngress".to_string(),
+                message: e.to_string(),
+            })?;
+
+        Ok(())
+    }
+
+    #[instrument(skip(self), fields(provider = "aws", region = %region, name = %name))]
+    async fn create_security_group(&self, region: &str, name: &str, description: &str) -> Result<String> {
+        log_provider_operation!(info, "aws", "create_security_group", region = region, name = name);
+        let client = self.client_for_region(region).await?;
+
+        let response = client
+            .create_security_group()
+            .group_name(name)
+            .description(description)
+            .send()
+            .await
+            .map_err(|e| ProviderError::ApiError {
+                provider: "aws".to_string(),
+                code: "CreateSecurityGroup".to_string(),
+                message: e.to_string(),
+            })?;
+
+        Ok(response.group_id.unwrap_or_default())
+    }
+
+    #[instrument(skip(self), fields(provider = "aws", region = %region, security_group_id = %security_group_id))]
+    async fn delete_security_group(&self, region: &str, security_group_id: &str) -> Result<()> {
+        log_provider_operation!(info, "aws", "delete_security_group", region = region, sg_id = security_group_id);
+        let client = self.client_for_region(region).await?;
+
+        client
+            .delete_security_group()
+            .group_id(security_group_id)
+            .send()
+            .await
+            .map_err(|e| ProviderError::ApiError {
+                provider: "aws".to_string(),
+                code: "DeleteSecurityGroup".to_string(),
+                message: e.to_string(),
+            })?;
+
+        Ok(())
+    }
+
     #[instrument(skip(self), fields(provider = "aws", region = %region, instance_id = %instance_id))]
     async fn fetch_metrics(&self, region: &str, instance_id: &str) -> Result<ResourceMetrics> {
         log_provider_operation!(

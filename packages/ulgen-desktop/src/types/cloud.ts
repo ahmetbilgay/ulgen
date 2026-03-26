@@ -7,6 +7,8 @@ export type InstanceSummary = {
   private_ip?: string | null;
   instance_type?: string | null;
   launched_at?: string | null;
+  platform?: string | null;
+  az?: string | null;
 };
 
 export type DiscoveryResult = {

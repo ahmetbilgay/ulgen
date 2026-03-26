@@ -47,12 +47,24 @@ pub trait CloudProvider: Send + Sync {
         instance_id: &str,
     ) -> Result<Vec<SecurityGroupSummary>>;
 
+    async fn list_all_security_groups(&self, region: &str) -> Result<Vec<SecurityGroupSummary>>;
+
     async fn authorize_ip(
         &self,
         region: &str,
         security_group_id: &str,
         rule: SecurityGroupRule,
     ) -> Result<()>;
+
+    async fn revoke_ip(
+        &self,
+        region: &str,
+        security_group_id: &str,
+        rule: SecurityGroupRule,
+    ) -> Result<()>;
+
+    async fn create_security_group(&self, region: &str, name: &str, description: &str) -> Result<String>;
+    async fn delete_security_group(&self, region: &str, security_group_id: &str) -> Result<()>;
 
     async fn fetch_metrics(&self, region: &str, instance_id: &str) -> Result<ResourceMetrics>;
 

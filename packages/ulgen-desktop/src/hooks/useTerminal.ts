@@ -1,55 +1,53 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { useEffect, useRef, useState, useCallback } from "react";
 import type { InstanceSummary } from "@/types/cloud";
 
-type TerminalSnapshot = {
-  output: string;
-  cursor: number;
-  running: boolean;
-};
-
-export function useTerminal(selectedInstance: InstanceSummary | null, sshUsername: string) {
+export function useTerminal(
+  selectedInstance: InstanceSummary | null, 
+  sshUsername: string,
+  privateKeyPath?: string,
+  onOutput?: (data: string) => void
+) {
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [output, setOutput] = useState("");
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
-  const cursorRef = useRef(0);
+
+  const onOutputRef = useRef(onOutput);
+  
+  useEffect(() => {
+    onOutputRef.current = onOutput;
+  }, [onOutput]);
 
   useEffect(() => {
-    if (!sessionId) {
-      return;
-    }
+    if (!sessionId) return;
 
-    let cancelled = false;
-    const timer = window.setInterval(async () => {
-      try {
-        const snapshot = await invoke<TerminalSnapshot>("read_terminal_output", {
-          sessionId,
-          cursor: cursorRef.current,
-        });
+    let unlistenFn: (() => void) | null = null;
+    let isCancelled = false;
 
-        if (cancelled) {
-          return;
+    const setupListener = async () => {
+      const u = await listen<{ sid: number; data: string }>("terminal-output", (event) => {
+        const { sid, data } = event.payload;
+        if (sid === sessionId && !isCancelled) {
+          onOutputRef.current?.(data);
         }
-
-        if (snapshot.output) {
-          setOutput((current) => current + snapshot.output);
-        }
-
-        cursorRef.current = snapshot.cursor;
-        setIsRunning(snapshot.running);
-      } catch (cause) {
-        if (!cancelled) {
-          setNotice(cause instanceof Error ? cause.message : "Terminal polling failed.");
-        }
+      });
+      
+      if (isCancelled) {
+        u();
+      } else {
+        unlistenFn = u;
       }
-    }, 450);
+    };
+
+    setupListener();
 
     return () => {
-      cancelled = true;
-      window.clearInterval(timer);
+      isCancelled = true;
+      if (unlistenFn) unlistenFn();
     };
   }, [sessionId]);
 
@@ -61,7 +59,7 @@ export function useTerminal(selectedInstance: InstanceSummary | null, sshUsernam
     };
   }, [sessionId]);
 
-  async function connect() {
+  const connect = useCallback(async () => {
     if (!selectedInstance) {
       setNotice("Select a server before opening a terminal.");
       return;
@@ -70,54 +68,56 @@ export function useTerminal(selectedInstance: InstanceSummary | null, sshUsernam
     setIsConnecting(true);
     setNotice(null);
     setOutput("");
-    cursorRef.current = 0;
 
     try {
-      if (sessionId) {
-        await invoke("close_terminal_session", { sessionId });
-      }
-
       const nextSessionId = await invoke<number>("open_terminal_session", {
         instance: selectedInstance,
         username: sshUsername,
+        privateKeyPath: privateKeyPath || null,
       });
 
-      setSessionId(nextSessionId);
+      setSessionId(Number(nextSessionId));
       setIsRunning(true);
       setNotice(`Connected to ${selectedInstance.name}.`);
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "Failed to open SSH session.");
+      setNotice(typeof cause === "string" ? cause : (cause instanceof Error ? cause.message : "Failed to open SSH session."));
     } finally {
       setIsConnecting(false);
     }
-  }
+  }, [selectedInstance, sshUsername, privateKeyPath]);
 
-  async function disconnect() {
+  const disconnect = useCallback(async () => {
     if (!sessionId) {
       return;
     }
 
     try {
       await invoke("close_terminal_session", { sessionId });
+    } catch (cause) {
+      setNotice(typeof cause === "string" ? cause : (cause instanceof Error ? cause.message : "Failed to disconnect terminal."));
     } finally {
       setSessionId(null);
       setIsRunning(false);
       setNotice("Terminal session closed.");
     }
-  }
+  }, [sessionId]);
 
-  async function send() {
-    if (!sessionId || !input.trim()) {
+  const send = useCallback(async (data?: string) => {
+    const rawInput = data !== undefined ? data : input;
+    if (!sessionId || (data === undefined && !rawInput.trim())) {
       return;
     }
 
     try {
-      await invoke("write_terminal_input", { sessionId, input });
-      setInput("");
+      await invoke("write_terminal_input", { 
+        sessionId, 
+        input: data !== undefined ? data : input + "\n" 
+      });
+      if (data === undefined) setInput("");
     } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "Failed to send terminal input.");
+      setNotice(typeof cause === "string" ? cause : (cause instanceof Error ? cause.message : "Failed to send terminal input."));
     }
-  }
+  }, [sessionId, input]);
 
   return {
     output,

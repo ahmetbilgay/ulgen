@@ -8,7 +8,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 
-const MotionBox = motion(Box);
+const MotionBox = (motion as any).create ? (motion as any).create(Box) : motion(Box);
 
 export function HomeView() {
   const { activeRegion, profiles, setShowAccountSettings, setCredentialForm } = useConfigStore();

@@ -1,0 +1,14 @@
+{
+  "identifier": "main-capability-v2",
+  "description": "Base permissions for ULGEN",
+  "windows": ["*"],
+  "permissions": [
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:event:allow-emit",
+    "dialog:default",
+    "core:window:default",
+    "core:path:default"
+  ]
+}

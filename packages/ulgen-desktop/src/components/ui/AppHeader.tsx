@@ -7,7 +7,7 @@ import { useLocation, useNavigate, NavLink } from "react-router-dom";
 import { useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-const MotionBox = motion(Box);
+const MotionBox = (motion as any).create ? (motion as any).create(Box) : motion(Box);
 
 export function AppHeader() {
   const { colorMode, toggleColorMode } = useColorMode();

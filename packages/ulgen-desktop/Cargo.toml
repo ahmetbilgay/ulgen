@@ -22,3 +22,4 @@ tokio.workspace = true
 ulgen-api-proto = { path = "../ulgen-api-proto" }
 ulgen-core = { path = "../ulgen-core" }
 window-vibrancy.workspace = true
+tauri-plugin-dialog = { workspace = true }

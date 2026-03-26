@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, VStack, Heading, Text, Stack, Input, Button, HStack, Icon, Circle, Badge, SimpleGrid, IconButton } from "@chakra-ui/react";
-import { Key, CheckCircle2, AlertCircle, ShieldCheck, Trash2, UserPlus, ArrowLeftRight, Plus, Cloud, ChevronRight, Settings2 } from "lucide-react";
+import { Key, CheckCircle2, AlertCircle, ShieldCheck, Trash2, UserPlus, ArrowLeftRight, Plus, Cloud, ChevronRight, Settings2, Lock, Shield } from "lucide-react";
 import { useConfigStore } from "@/store/useConfigStore";
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { motion, AnimatePresence } from "framer-motion";
@@ -9,7 +9,7 @@ import { useState } from "react";
 
 const MotionBox = (motion as any).create ? (motion as any).create(Box) : motion(Box);
 
-export function CloudAccountView() {
+export function IdentityVaultView() {
   const { 
     credentialForm, 
     setCredentialForm, 
@@ -47,8 +47,9 @@ export function CloudAccountView() {
       <Box px="2">
         <HStack justify="space-between" align="flex-end">
           <VStack align="flex-start" gap="1">
-            <Heading size="3xl" fontWeight="black" letterSpacing="-0.03em">Identity Console</Heading>
-            <Text color="fg.muted">Manage your global cloud providers and operational identities.</Text>
+            <Text fontSize="xs" fontWeight="black" color="blue.500" letterSpacing="0.4em" textTransform="uppercase">Security Foundation</Text>
+            <Heading size="3xl" fontWeight="900" letterSpacing="-0.04em">Identity Vault</Heading>
+            <Text color="fg.muted" fontSize="lg">Manage your encrypted cloud credentials and operational context.</Text>
           </VStack>
           {!isAdding && (
             <Button 
@@ -58,7 +59,7 @@ export function CloudAccountView() {
               borderRadius="xl"
               onClick={handleAddNew}
             >
-              <Plus size={16} /> Add Provider
+              <Plus size={16} /> New Identity
             </Button>
           )}
         </HStack>
@@ -88,27 +89,27 @@ export function CloudAccountView() {
                           <ChevronRight style={{ transform: 'rotate(180deg)' }} />
                         </IconButton>
                         <Text fontWeight="black" fontSize="xs" textTransform="uppercase" letterSpacing="0.1em" color="blue.500">
-                          {profiles.length === 0 ? "First Time Setup" : "Add New Provider"}
+                          {profiles.length === 0 ? "First Time Setup" : "Add Identity"}
                         </Text>
                       </HStack>
-                      <Text fontSize="sm" color="fg.muted">Enter your cloud credentials to establish a new operational context.</Text>
+                      <Text fontSize="sm" color="fg.muted">Establish a new operational context with encrypted credentials.</Text>
                     </VStack>
-                    <Badge variant="surface" colorPalette="blue" px="3" borderRadius="full">AWS PROVIDER</Badge>
+                    <Badge variant="surface" colorPalette="blue" px="3" borderRadius="xl">AWS PROVIDER</Badge>
                   </HStack>
 
                   <SimpleGrid columns={{ base: 1, md: 2 }} gap="8">
                     <Box>
-                      <Text fontSize="xs" fontWeight="black" mb="2" color="fg.muted" letterSpacing="0.05em">PROFILE ALIAS</Text>
+                      <Text fontSize="xs" fontWeight="black" mb="2" color="fg.muted" letterSpacing="0.05em" textTransform="uppercase">Vault Alias</Text>
                       <Input 
-                        placeholder="e.g. Production_Main" 
+                        placeholder="e.g. CORE_PROD" 
                         variant="subtle"
                         size="lg"
-                        value={credentialForm.account_name as string}
+                        value={credentialForm.account_name}
                         onChange={(e) => setCredentialForm({ ...credentialForm, account_name: e.target.value })}
                       />
                     </Box>
                     <Box>
-                      <Text fontSize="xs" fontWeight="black" mb="2" color="fg.muted" letterSpacing="0.05em">DEFAULT REGION</Text>
+                      <Text fontSize="xs" fontWeight="black" mb="2" color="fg.muted" letterSpacing="0.05em" textTransform="uppercase">Operational Region</Text>
                       <Input 
                         placeholder="us-east-1" 
                         variant="subtle"
@@ -118,7 +119,7 @@ export function CloudAccountView() {
                       />
                     </Box>
                     <Box>
-                      <Text fontSize="xs" fontWeight="black" mb="2" color="fg.muted" letterSpacing="0.05em">ACCESS KEY ID</Text>
+                      <Text fontSize="xs" fontWeight="black" mb="2" color="fg.muted" letterSpacing="0.05em" textTransform="uppercase">Access Key ID</Text>
                       <Input 
                         placeholder="AKIA..." 
                         variant="subtle"
@@ -128,7 +129,7 @@ export function CloudAccountView() {
                       />
                     </Box>
                     <Box>
-                      <Text fontSize="xs" fontWeight="black" mb="2" color="fg.muted" letterSpacing="0.05em">SECRET ACCESS KEY</Text>
+                      <Text fontSize="xs" fontWeight="black" mb="2" color="fg.muted" letterSpacing="0.05em" textTransform="uppercase">Secret Access Key</Text>
                       <Input 
                         type="password" 
                         placeholder="••••••••••••••••" 
@@ -151,7 +152,7 @@ export function CloudAccountView() {
 
                   <HStack justify="flex-end" gap="4">
                     {profiles.length > 0 && (
-                      <Button variant="ghost" onClick={() => setIsAdding(false)}>Cancel</Button>
+                      <Button variant="ghost" onClick={() => setIsAdding(false)}>Cancel Flush</Button>
                     )}
                     <Button 
                       colorPalette="blue" 
@@ -161,7 +162,7 @@ export function CloudAccountView() {
                       onClick={handleSave}
                       loading={credentialBusy}
                     >
-                      Connect Identity
+                      Authorize & Store
                     </Button>
                   </HStack>
                 </VStack>
@@ -184,7 +185,7 @@ export function CloudAccountView() {
                       <VStack align="stretch" gap="5">
                         <HStack justify="space-between">
                           <Circle size="10" bg={isActive ? "blue.500/10" : "bg.muted"} color={isActive ? "blue.500" : "fg.muted"}>
-                            <Cloud size={20} />
+                            <Lock size={20} />
                           </Circle>
                           {isActive && <Badge colorPalette="green" variant="subtle">ACTIVE</Badge>}
                         </HStack>
@@ -196,7 +197,7 @@ export function CloudAccountView() {
 
                         <HStack gap="4" pt="2">
                            <VStack align="flex-start" gap="0">
-                             <Text fontSize="10px" color="fg.muted" fontWeight="bold">REGION</Text>
+                             <Text fontSize="10px" color="fg.muted" fontWeight="bold">MGMT REGION</Text>
                              <Text fontSize="xs" fontWeight="bold">{profile.default_region}</Text>
                            </VStack>
                         </HStack>
@@ -212,7 +213,7 @@ export function CloudAccountView() {
                             disabled={isActive}
                             onClick={() => switchProfile(profile.name)}
                           >
-                            <ArrowLeftRight size={14} /> {isActive ? "Connected" : "Switch"}
+                            <ArrowLeftRight size={14} /> {isActive ? "Connected" : "Switch Context"}
                           </Button>
                           <HStack gap="1">
                             <IconButton 
@@ -222,7 +223,7 @@ export function CloudAccountView() {
                               onClick={() => {
                                 setCredentialForm({
                                     account_name: profile.name,
-                                    access_key_id: "", // Don't pre-fill secret
+                                    access_key_id: "", 
                                     secret_access_key: "",
                                     default_region: profile.default_region
                                 });
@@ -269,8 +270,8 @@ export function CloudAccountView() {
                   <Plus size={24} />
                 </Circle>
                 <VStack gap="1">
-                  <Text fontWeight="bold">Add Provider</Text>
-                  <Text fontSize="xs" color="fg.muted">Connect a new account</Text>
+                  <Text fontWeight="bold">Link New Identity</Text>
+                  <Text fontSize="xs" color="fg.muted">Add a cloud provider profile</Text>
                 </VStack>
               </Box>
             </SimpleGrid>
@@ -278,30 +279,19 @@ export function CloudAccountView() {
         )}
       </AnimatePresence>
 
-      {!isAdding && profiles.length > 0 && (
-        <PremiumCard hoverable={false}>
-          <Box p="6">
-            <HStack gap="6">
-               <Circle size="12" bg="green.500/10" color="green.500">
-                 <ShieldCheck size={24} />
-               </Circle>
-               <VStack align="flex-start" gap="0">
-                 <Text fontWeight="bold">Secure Credentials Management</Text>
-                 <Text fontSize="xs" color="fg.muted">All identities are locally encrypted with AES-256 GCM. No secrets ever leave your machine.</Text>
-               </VStack>
-            </HStack>
-          </Box>
-        </PremiumCard>
-      )}
+      <PremiumCard hoverable={false}>
+        <Box p="6">
+          <HStack gap="6">
+             <Circle size="12" bg="green.500/10" color="green.500">
+               <ShieldCheck size={24} />
+             </Circle>
+             <VStack align="flex-start" gap="0">
+               <Text fontWeight="bold">Cryptographic Isolation</Text>
+               <Text fontSize="xs" color="fg.muted">Ulgen uses hardware-backed AES-256 GCM encryption. Your secrets are never stored in plain text and never leave this node.</Text>
+             </VStack>
+          </HStack>
+        </Box>
+      </PremiumCard>
     </Stack>
-  );
-}
-
-function InfoRow({ label, value }: { label: string, value: string }) {
-  return (
-    <HStack justify="space-between" w="full">
-      <Text fontSize="xs" color="fg.muted">{label}</Text>
-      <Text fontSize="xs" fontWeight="bold">{value}</Text>
-    </HStack>
   );
 }

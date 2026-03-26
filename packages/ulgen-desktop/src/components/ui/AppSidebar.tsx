@@ -1,22 +1,21 @@
 import { Box, VStack, Text, HStack, Icon, IconButton, Circle } from "@chakra-ui/react";
-import { Home, Server, Key, Shield, Settings, ChevronLeft, ChevronRight, Zap, Database, Terminal } from "lucide-react";
+import { Home, Server, Key, Shield, Settings, ChevronLeft, ChevronRight, Zap, Database, Terminal, Activity, Lock } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useConfigStore } from "@/store/useConfigStore";
 import { motion, AnimatePresence } from "framer-motion";
 
-const MotionBox = motion(Box);
+const MotionBox = (motion as any).create ? (motion as any).create(Box) : motion(Box);
 
-const AWS_APPS = [
-  { icon: Home, label: "Dashboard", path: "/app/home" },
-  { icon: Server, label: "EC2 Instances", path: "/app/servers" },
-  { icon: Shield, label: "Security Hub", path: "/app/security" },
-  { icon: Terminal, label: "SSH Keys", path: "/app/keys" },
+const CORE_APPS = [
+  { icon: Activity, label: "Operations", path: "/app/home" },
+  { icon: Server, label: "Compute Center", path: "/app/servers" },
+  { icon: Shield, label: "Security Watchtower", path: "/app/security" },
+  { icon: Lock, label: "Identity Vault", path: "/app/identity" },
 ];
 
 /**
  * AppSidebar (L2 Navigation)
  * Displays "Apps" available for the active cloud identity.
- * Minimalist, Discord-channel style.
  */
 export function AppSidebar() {
   const location = useLocation();
@@ -54,13 +53,13 @@ export function AppSidebar() {
         <VStack align="stretch" gap="6">
            <VStack align="stretch" gap="1">
              <Text fontSize="9px" fontWeight="black" color="fg.muted" letterSpacing="0.1em" mb="2" textTransform="uppercase">Core Services</Text>
-             {AWS_APPS.map(app => {
+             {CORE_APPS.map(app => {
                const isActive = location.pathname === app.path;
                return (
                  <NavLink key={app.path} to={app.path} style={{ textDecoration: 'none' }}>
                    <HStack 
                      px="3" 
-                     py="2" 
+                     py="2.5" 
                      borderRadius="xl" 
                      bg={isActive ? "blue.500/10" : "transparent"} 
                      color={isActive ? "blue.400" : "fg.muted"}
@@ -77,7 +76,7 @@ export function AppSidebar() {
            </VStack>
 
            <VStack align="stretch" gap="1">
-             <Text fontSize="9px" fontWeight="black" color="fg.muted" letterSpacing="0.1em" mb="2" textTransform="uppercase">Advanced</Text>
+             <Text fontSize="9px" fontWeight="black" color="fg.muted" letterSpacing="0.1em" mb="2" textTransform="uppercase">Fleet Management</Text>
              <HStack 
                px="3" 
                py="2" 
@@ -88,7 +87,19 @@ export function AppSidebar() {
                gap="3"
              >
                <Database size={16} />
-               <Text fontSize="sm" fontWeight="bold">Databases</Text>
+               <Text fontSize="sm" fontWeight="bold">Cloud Databases</Text>
+             </HStack>
+             <HStack 
+               px="3" 
+               py="2" 
+               borderRadius="xl" 
+               color="fg.muted"
+               opacity="0.5"
+               cursor="not-allowed"
+               gap="3"
+             >
+               <Zap size={16} />
+               <Text fontSize="sm" fontWeight="bold">Serverless</Text>
              </HStack>
            </VStack>
         </VStack>
@@ -98,7 +109,7 @@ export function AppSidebar() {
          <Box p="4" bg="bg.muted" borderRadius="2xl" border="1px solid" borderColor="border.muted">
            <VStack align="stretch" gap="2">
               <HStack justify="space-between">
-                <Text fontSize="xs" fontWeight="black">Status</Text>
+                <Text fontSize="xs" fontWeight="black">Node Status</Text>
                 <Box boxSize="2" bg="green.500" borderRadius="full" boxSizing="border-box" border="2px solid white" />
               </HStack>
               <Text fontSize="10px" color="fg.muted">Production Environment linked to us-east-1</Text>

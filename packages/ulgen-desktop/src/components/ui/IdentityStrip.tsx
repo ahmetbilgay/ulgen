@@ -4,7 +4,7 @@ import { useConfigStore } from "@/store/useConfigStore";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 
-const MotionBox = motion(Box);
+const MotionBox = (motion as any).create ? (motion as any).create(Box) : motion(Box);
 
 export function IdentityStrip() {
   const { 
@@ -240,7 +240,7 @@ export function IdentityStrip() {
                   borderColor="border.muted"
                   boxShadow="dark-lg"
                   overflow="hidden"
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={(e: React.MouseEvent) => e.stopPropagation()}
                 >
                   <Flex h="full">
                     {/* Modal Sidebar (Profile List) */}

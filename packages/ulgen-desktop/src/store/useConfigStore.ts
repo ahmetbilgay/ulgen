@@ -49,6 +49,8 @@ interface ConfigState {
   refreshRegions: () => Promise<void>;
   showAccountSettings: boolean;
   setShowAccountSettings: (show: boolean) => void;
+  nodeCredentials: Record<string, { username: string, key_path: string | null }>;
+  setNodeCredential: (instanceId: string, username: string, key_path: string | null) => Promise<void>;
 }
 
 const EMPTY_FORM: AwsCredentialInput = {
@@ -69,6 +71,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   profiles: [],
   availableRegions: [],
   showAccountSettings: false,
+  nodeCredentials: {},
 
   setCredentialForm: (updater) =>
     set((state) => ({
@@ -90,6 +93,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
           default_region: summary.default_region ?? state.credentialForm.default_region,
         },
       }));
+      
+      try {
+        const nodeCreds = await invoke<Record<string, { username: string, key_path: string | null }>>("load_node_credentials");
+        set({ nodeCredentials: nodeCreds });
+      } catch {
+        // Normal if no node credentials saved yet
+      }
+
       if (summary.is_configured) {
         await get().refreshRegions();
       }
@@ -194,6 +205,19 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       set({ credentialNotice: cause instanceof Error ? cause.message : "Failed to clear AWS credentials." });
     } finally {
       set({ credentialBusy: false });
+    }
+  },
+  setNodeCredential: async (instanceId, username, key_path) => {
+    const { nodeCredentials } = get();
+    const updated = {
+      ...nodeCredentials,
+      [instanceId]: { username, key_path }
+    };
+    set({ nodeCredentials: updated });
+    try {
+      await invoke("save_node_credentials", { credentials: updated });
+    } catch (e) {
+      console.error("Failed to save node credentials:", e);
     }
   },
 }));

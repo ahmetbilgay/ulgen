@@ -4,7 +4,8 @@ import { AppShell } from "@/layouts/AppShell";
 import { HomeView } from "@/views/HomeView";
 import { InventoryView } from "@/views/InventoryView";
 import { InstanceDetailView } from "@/views/InstanceDetailView";
-import { CloudAccountView } from "@/views/CloudAccountView";
+import { SecurityView } from "@/views/SecurityView";
+import { IdentityVaultView } from "@/views/IdentityVaultView";
 import { useConfigStore } from "@/store/useConfigStore";
 import { useEffect, useState } from "react";
 
@@ -36,11 +37,8 @@ export function App() {
           <Route path="home" element={<HomeView />} />
           <Route path="servers" element={<InventoryView />} />
           <Route path="servers/:id" element={<InstanceDetailView />} />
-          <Route path="account" element={<CloudAccountView />} />
-          
-          <Route path="keys" element={<Placeholder title="SSH Key Management" />} />
-          <Route path="security" element={<Placeholder title="Security Group Inspector" />} />
-          <Route path="settings" element={<Placeholder title="System Preferences" />} />
+          <Route path="security" element={<SecurityView />} />
+          <Route path="identity" element={<IdentityVaultView />} />
         </Route>
 
         {/* Fallback */}
