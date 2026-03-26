@@ -63,6 +63,38 @@ impl Default for UiPreferences {
     }
 }
 
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FirewallDirection {
+    Inbound,
+    Outbound,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UnifiedFirewallRule {
+    pub direction: FirewallDirection,
+    pub protocol: String,
+    pub port_range: String,
+    pub source: String,
+    pub description: Option<String>,
+    pub is_allowed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SecurityGroupSummary {
+    pub id: String,
+    pub name: String,
+    pub rules: Vec<UnifiedFirewallRule>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ResourceMetrics {
+    pub timestamp: DateTime<Utc>,
+    pub cpu_percentage: Option<f64>,
+    pub memory_total_bytes: Option<u64>,
+    pub memory_used_bytes: Option<u64>,
+    pub disk_usage_percentage: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TeamShare {
     pub id: Uuid,

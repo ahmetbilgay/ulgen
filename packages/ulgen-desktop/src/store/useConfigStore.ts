@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
 
 export type AwsCredentialInput = {
-  account_name: String;
+  account_name: string;
   access_key_id: string;
   secret_access_key: string;
   session_token?: string | null;
@@ -22,6 +22,13 @@ export type AwsConnectionStatus = {
   region_count: number;
 };
 
+export type CloudProfile = {
+  name: string;
+  provider: string;
+  preview: string;
+  default_region: string;
+};
+
 interface ConfigState {
   credentialSummary: AwsCredentialSummary | null;
   credentialForm: AwsCredentialInput;
@@ -29,12 +36,19 @@ interface ConfigState {
   connectionStatus: AwsConnectionStatus | null;
   credentialBusy: boolean;
   activeRegion: string | null;
+  profiles: CloudProfile[];
+  availableRegions: string[];
 
   setCredentialForm: (updater: AwsCredentialInput | ((current: AwsCredentialInput) => AwsCredentialInput)) => void;
   setActiveRegion: (region: string | null) => void;
   hydrateCredentialSummary: () => Promise<void>;
   connectProvider: () => Promise<void>;
+  switchProfile: (name: string) => Promise<void>;
+  deleteProfile: (name: string) => Promise<void>;
   clearCredentials: () => Promise<void>;
+  refreshRegions: () => Promise<void>;
+  showAccountSettings: boolean;
+  setShowAccountSettings: (show: boolean) => void;
 }
 
 const EMPTY_FORM: AwsCredentialInput = {
@@ -52,6 +66,9 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   connectionStatus: null,
   credentialBusy: false,
   activeRegion: null,
+  profiles: [],
+  availableRegions: [],
+  showAccountSettings: false,
 
   setCredentialForm: (updater) =>
     set((state) => ({
@@ -62,8 +79,10 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   hydrateCredentialSummary: async () => {
     try {
       const summary = await invoke<AwsCredentialSummary>("load_aws_credentials");
+      const profiles = await invoke<CloudProfile[]>("list_cloud_profiles");
       set((state) => ({
         credentialSummary: summary,
+        profiles,
         activeRegion: state.activeRegion ?? summary.default_region ?? null,
         credentialForm: {
           ...state.credentialForm,
@@ -71,6 +90,9 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
           default_region: summary.default_region ?? state.credentialForm.default_region,
         },
       }));
+      if (summary.is_configured) {
+        await get().refreshRegions();
+      }
     } catch {
       set({
         credentialSummary: {
@@ -83,6 +105,17 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     }
   },
 
+  refreshRegions: async () => {
+    try {
+      const regions = await invoke<string[]>("fetch_aws_regions");
+      set({ availableRegions: regions });
+    } catch (e) {
+      console.error("Failed to fetch regions:", e);
+    }
+  },
+
+  setShowAccountSettings: (show) => set({ showAccountSettings: show }),
+
   connectProvider: async () => {
     set({ credentialBusy: true, connectionStatus: null });
     try {
@@ -93,6 +126,13 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       const status = await invoke<AwsConnectionStatus>("test_aws_connection", {
         input: { ...credentialForm, session_token: credentialForm.session_token || null },
       });
+      
+      // Automatically save as a profile
+      await invoke("save_cloud_profile", { input: { 
+        ...credentialForm, 
+        session_token: credentialForm.session_token || null 
+      }});
+
       set({
         credentialSummary: summary,
         connectionStatus: status,
@@ -111,6 +151,33 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     }
   },
 
+  switchProfile: async (name: string) => {
+    set({ credentialBusy: true });
+    try {
+      const summary = await invoke<AwsCredentialSummary>("switch_cloud_profile", { name });
+      set({ 
+        credentialSummary: summary,
+        activeRegion: summary.default_region || null,
+        connectionStatus: null,
+        credentialNotice: `Switched to profile: ${name}`
+      });
+      await get().hydrateCredentialSummary();
+    } catch (cause) {
+      set({ credentialNotice: cause instanceof Error ? cause.message : "Failed to switch profile." });
+    } finally {
+      set({ credentialBusy: false });
+    }
+  },
+
+  deleteProfile: async (name: string) => {
+    try {
+      await invoke("delete_cloud_profile", { name });
+      await get().hydrateCredentialSummary();
+    } catch (cause) {
+      set({ credentialNotice: cause instanceof Error ? cause.message : "Failed to delete profile." });
+    }
+  },
+
   clearCredentials: async () => {
     set({ credentialBusy: true });
     try {
@@ -121,6 +188,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         credentialNotice: "Saved AWS credentials cleared.",
         connectionStatus: null,
         activeRegion: "us-east-1",
+        availableRegions: [],
       });
     } catch (cause) {
       set({ credentialNotice: cause instanceof Error ? cause.message : "Failed to clear AWS credentials." });

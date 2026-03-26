@@ -16,7 +16,10 @@ use aws_sdk_ec2::types::{
 use chrono::{TimeZone, Utc};
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, instrument, warn};
-use ulgen_api_proto::{DiscoveryResult, InstanceSummary};
+use ulgen_api_proto::{
+    DiscoveryResult, FirewallDirection, InstanceSummary, ResourceMetrics, SecurityGroupSummary,
+    UnifiedFirewallRule,
+};
 
 use crate::error::{ProviderError, Result};
 use crate::{CloudProvider, SecurityGroupRule};
@@ -216,6 +219,54 @@ fn normalize_cidr(cidr: &str) -> String {
         .unwrap_or_else(|_| cidr.to_owned())
 }
 
+fn map_ip_permission(
+    permission: &IpPermission,
+    direction: FirewallDirection,
+) -> Vec<UnifiedFirewallRule> {
+    let protocol = permission
+        .ip_protocol
+        .clone()
+        .unwrap_or_else(|| "all".to_string());
+    let from_port = permission.from_port;
+    let to_port = permission.to_port;
+
+    let port_range = match (from_port, to_port) {
+        (Some(f), Some(t)) if f == t => f.to_string(),
+        (Some(f), Some(t)) => format!("{}-{}", f, t),
+        _ => "all".to_string(),
+    };
+
+    let mut rules = Vec::new();
+
+    if let Some(ip_ranges) = &permission.ip_ranges {
+        for range in ip_ranges {
+            rules.push(UnifiedFirewallRule {
+                direction,
+                protocol: protocol.clone(),
+                port_range: port_range.clone(),
+                source: range.cidr_ip.clone().unwrap_or_default(),
+                description: range.description.clone(),
+                is_allowed: true,
+            });
+        }
+    }
+
+    if let Some(user_id_group_pairs) = &permission.user_id_group_pairs {
+        for pair in user_id_group_pairs {
+            rules.push(UnifiedFirewallRule {
+                direction,
+                protocol: protocol.clone(),
+                port_range: port_range.clone(),
+                source: pair.group_id.clone().unwrap_or_default(),
+                description: pair.description.clone(),
+                is_allowed: true,
+            });
+        }
+    }
+
+    rules
+}
+
 impl Default for AwsProvider {
     fn default() -> Self {
         Self::new("us-east-1")
@@ -233,12 +284,21 @@ impl DiscoveryEngine {
     }
 
     #[instrument(skip(self), fields(provider = "aws"))]
-    pub async fn discover_instances(&self) -> Result<DiscoveryResult> {
+    pub async fn discover_instances(&self, target_region: Option<String>) -> Result<DiscoveryResult> {
         info!("Starting instance discovery across all regions");
 
-        let regions = self.provider.list_regions().await?;
+        let regions = if let Some(region) = target_region.as_ref() {
+            vec![region.clone()]
+        } else {
+            self.provider.list_regions().await?
+        };
+
         let region_count = regions.len();
-        info!(region_count, "Discovered regions, starting parallel scan");
+        info!(
+            region_count,
+            is_selective = target_region.is_some(),
+            "Starting parallel region scan"
+        );
 
         let mut tasks = JoinSet::new();
 
@@ -318,13 +378,13 @@ impl CloudProvider for AwsProvider {
         "aws"
     }
 
-    #[instrument(skip(self), fields(provider = "aws"))]
-    async fn fetch_instances(&self) -> Result<DiscoveryResult> {
-        log_provider_operation!(info, "aws", "fetch_instances",);
+    #[instrument(skip(self, region), fields(provider = "aws", region = ?region))]
+    async fn fetch_instances(&self, region: Option<String>) -> Result<DiscoveryResult> {
+        log_provider_operation!(info, "aws", "fetch_instances", region = region.as_deref().unwrap_or("all"));
 
         time_operation!("aws_fetch_instances", {
             DiscoveryEngine::new(Arc::new(self.clone()))
-                .discover_instances()
+                .discover_instances(region)
                 .await
         })
     }
@@ -397,6 +457,215 @@ impl CloudProvider for AwsProvider {
 
         info!("Instance stopped successfully");
         Ok(())
+    }
+
+    #[instrument(skip(self), fields(provider = "aws", region = %region, instance_id = %instance_id))]
+    async fn reboot_instance(&self, region: &str, instance_id: &str) -> Result<()> {
+        log_provider_operation!(
+            info,
+            "aws",
+            "reboot_instance",
+            region = region,
+            instance_id = instance_id
+        );
+
+        let client = self.client_for_region(region).await.map_err(|_e| {
+            ProviderError::ServiceUnavailable {
+                provider: "aws".to_string(),
+                region: Some(region.to_string()),
+            }
+        })?;
+
+        client
+            .reboot_instances()
+            .instance_ids(instance_id)
+            .send()
+            .await
+            .map_err(|e| {
+                error!(error = %e, "Failed to reboot instance");
+                ProviderError::ApiError {
+                    provider: "aws".to_string(),
+                    code: "RebootInstances".to_string(),
+                    message: format!("Failed to reboot instance {}: {}", instance_id, e),
+                }
+            })?;
+
+        info!("Instance rebooted successfully");
+        Ok(())
+    }
+
+    #[instrument(skip(self), fields(provider = "aws", region = %region, instance_id = %instance_id))]
+    async fn fetch_security_groups(
+        &self,
+        region: &str,
+        instance_id: &str,
+    ) -> Result<Vec<SecurityGroupSummary>> {
+        log_provider_operation!(
+            info,
+            "aws",
+            "fetch_security_groups",
+            region = region,
+            instance_id = instance_id
+        );
+
+        let client = self.client_for_region(region).await?;
+
+        // 1. Describe instance to get its security groups
+        let response = client
+            .describe_instances()
+            .instance_ids(instance_id)
+            .send()
+            .await
+            .map_err(|e| ProviderError::ApiError {
+                provider: "aws".to_string(),
+                code: "DescribeInstances".to_string(),
+                message: e.to_string(),
+            })?;
+
+        let instance = response
+            .reservations
+            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|r| r.instances.unwrap_or_default())
+            .next()
+            .ok_or_else(|| {
+                error!(instance_id = %instance_id, "Instance NOT found in describe_instances response");
+                ProviderError::ResourceNotFound {
+                    resource_type: "instance".to_string(),
+                    resource_id: instance_id.to_string(),
+                }
+            })?;
+
+        let sg_ids = instance
+            .security_groups
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|sg| sg.group_id)
+            .collect::<Vec<_>>();
+
+        debug!(
+            instance_id = %instance_id,
+            found_sg_ids = ?sg_ids,
+            "Found security group IDs for instance"
+        );
+
+        if sg_ids.is_empty() {
+            warn!(instance_id = %instance_id, "No security groups attached to instance");
+            return Ok(Vec::new());
+        }
+
+        // 2. Describe security groups to get rules
+        let sg_response = client
+            .describe_security_groups()
+            .set_group_ids(Some(sg_ids))
+            .send()
+            .await
+            .map_err(|e| ProviderError::ApiError {
+                provider: "aws".to_string(),
+                code: "DescribeSecurityGroups".to_string(),
+                message: e.to_string(),
+            })?;
+
+        let mut summaries = Vec::new();
+        for sg in sg_response.security_groups.unwrap_or_default() {
+            let mut rules = Vec::new();
+
+            // Inbound Rules
+            for perm in sg.ip_permissions.unwrap_or_default() {
+                rules.extend(map_ip_permission(&perm, FirewallDirection::Inbound));
+            }
+
+            // Outbound Rules
+            for perm in sg.ip_permissions_egress.unwrap_or_default() {
+                rules.extend(map_ip_permission(&perm, FirewallDirection::Outbound));
+            }
+
+            summaries.push(SecurityGroupSummary {
+                id: sg.group_id.unwrap_or_default(),
+                name: sg.group_name.unwrap_or_default(),
+                rules,
+            });
+        }
+
+        Ok(summaries)
+    }
+
+    #[instrument(skip(self), fields(provider = "aws", region = %region, instance_id = %instance_id))]
+    async fn fetch_metrics(&self, region: &str, instance_id: &str) -> Result<ResourceMetrics> {
+        log_provider_operation!(
+            info,
+            "aws",
+            "fetch_metrics",
+            region = region,
+            instance_id = instance_id
+        );
+
+        let region_provider =
+            aws_config::meta::region::RegionProviderChain::first_try(Some(aws_sdk_cloudwatch::config::Region::new(region.to_owned())))
+                .or_default_provider()
+                .or_else(aws_sdk_cloudwatch::config::Region::new(self.default_region.clone()));
+
+        let mut loader = aws_config::defaults(BehaviorVersion::latest()).region(region_provider);
+        if let Some(credentials) = &self.credentials {
+            loader = loader.credentials_provider(credentials.clone());
+        }
+
+        let config = loader.load().await;
+        let cw_client = aws_sdk_cloudwatch::Client::new(&config);
+
+        let now = Utc::now();
+        // Look back 30 minutes instead of 10 to ensure we catch a data point (CloudWatch latency)
+        let start_time = now - chrono::Duration::minutes(30);
+
+        let response = cw_client
+            .get_metric_statistics()
+            .namespace("AWS/EC2")
+            .metric_name("CPUUtilization")
+            .dimensions(
+                aws_sdk_cloudwatch::types::Dimension::builder()
+                    .name("InstanceId")
+                    .value(instance_id)
+                    .build(),
+            )
+            .start_time(aws_sdk_cloudwatch::primitives::DateTime::from_secs(
+                start_time.timestamp(),
+            ))
+            .end_time(aws_sdk_cloudwatch::primitives::DateTime::from_secs(
+                now.timestamp(),
+            ))
+            .period(60) // 1 minute resolution
+            .statistics(aws_sdk_cloudwatch::types::Statistic::Average)
+            .send()
+            .await
+            .map_err(|e| ProviderError::ApiError {
+                provider: "aws".to_string(),
+                code: "GetMetricStatistics".to_string(),
+                message: e.to_string(),
+            })?;
+
+        let mut datapoints = response.datapoints.unwrap_or_default();
+        
+        // Sort by timestamp descending to get the most recent point
+        datapoints.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        
+        let cpu_percentage = datapoints
+            .first()
+            .and_then(|dp| dp.average);
+
+        debug!(
+            instance_id = %instance_id,
+            datapoint_count = datapoints.len(),
+            latest_cpu = ?cpu_percentage,
+            "Fetched metrics from CloudWatch"
+        );
+
+        Ok(ResourceMetrics {
+            timestamp: now,
+            cpu_percentage,
+            memory_total_bytes: None, // Requires agent/SSH
+            memory_used_bytes: None,  // Requires agent/SSH
+            disk_usage_percentage: None, // Requires agent/SSH
+        })
     }
 
     #[instrument(skip(self), fields(

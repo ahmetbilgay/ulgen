@@ -1,6 +1,7 @@
 import { Box, Flex } from "@chakra-ui/react";
-import { Sidebar } from "@/components/ui/Sidebar";
 import { AppHeader } from "@/components/ui/AppHeader";
+import { IdentityStrip } from "@/components/ui/IdentityStrip";
+import { AppSidebar } from "@/components/ui/AppSidebar";
 import { Outlet, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -9,7 +10,13 @@ export function AppShell() {
 
   return (
     <Flex h="100vh" bg="bg.panel" overflow="hidden">
-      <Sidebar />
+      {/* Primary Identity Layer (The only vertical anchor) */}
+      <IdentityStrip />
+      
+      {/* Secondary App Layer (Context-aware navigation) */}
+      <AppSidebar />
+
+      {/* Main Content Area - Maximized Space */}
       <Flex direction="column" flex="1" overflow="hidden">
         <AppHeader />
         <Box as="main" flex="1" overflowY="auto" p="6" position="relative">

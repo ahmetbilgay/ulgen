@@ -21,6 +21,7 @@
         "decorations": true
       }
     ],
+    "macOSPrivateApi": true,
     "security": {
       "csp": null
     }

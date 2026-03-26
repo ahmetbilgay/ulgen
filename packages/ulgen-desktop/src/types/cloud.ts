@@ -34,3 +34,28 @@ export type AwsConnectionStatus = {
   message: string;
   region_count: number;
 };
+
+export type FirewallDirection = "Inbound" | "Outbound";
+
+export type UnifiedFirewallRule = {
+  direction: FirewallDirection;
+  protocol: string;
+  port_range: string;
+  source: string;
+  description?: string | null;
+  is_allowed: boolean;
+};
+
+export type SecurityGroupSummary = {
+  id: string;
+  name: string;
+  rules: UnifiedFirewallRule[];
+};
+
+export type ResourceMetrics = {
+  timestamp: string;
+  cpu_percentage?: number | null;
+  memory_total_bytes?: number | null;
+  memory_used_bytes?: number | null;
+  disk_usage_percentage?: number | null;
+};

@@ -10,6 +10,7 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::Mutex;
 use ulgen_api_proto::{
     AwsConnectionStatus, AwsCredentialInput, AwsCredentialSummary, DiscoveryResult, InstanceSummary,
+    ResourceMetrics, SecurityGroupSummary,
 };
 use ulgen_core::{AwsProvider, CloudProvider, vault::SecretVault};
 
@@ -19,6 +20,15 @@ use window_vibrancy::apply_mica;
 use window_vibrancy::{NSVisualEffectMaterial, apply_vibrancy};
 
 const AWS_CREDENTIALS_KEY: &str = "aws-credentials";
+const PROFILES_LIST_KEY: &str = "cloud-profiles";
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct CloudProfile {
+    name: String,
+    provider: String, // "aws", etc.
+    preview: String,
+    default_region: String,
+}
 
 #[derive(Default)]
 struct AppState {
@@ -165,6 +175,92 @@ fn save_aws_credentials(input: AwsCredentialInput) -> Result<AwsCredentialSummar
 }
 
 #[tauri::command]
+fn list_cloud_profiles() -> Result<Vec<CloudProfile>, String> {
+    let mut profiles = match SecretVault::load_json::<Vec<CloudProfile>>(PROFILES_LIST_KEY) {
+        Ok(p) => p,
+        Err(_) => Vec::new(),
+    };
+    
+    // If no profiles exist but there are active credentials, backfill the first profile
+    if profiles.is_empty() {
+        if let Ok(creds) = load_saved_credentials() {
+            let preview = credential_preview(&creds.access_key_id);
+            let profile = CloudProfile {
+                name: creds.account_name.clone(),
+                provider: "aws".to_string(),
+                preview,
+                default_region: creds.default_region.clone(),
+            };
+            profiles.push(profile);
+            // Persist the backfilled profile list
+            let _ = SecretVault::store_json(PROFILES_LIST_KEY, &profiles);
+            
+            // Also ensure the full creds are saved in the profile secret key
+            let secret_key = format!("profile-{}", creds.account_name);
+            let _ = SecretVault::store_json(&secret_key, &creds);
+        }
+    }
+    
+    Ok(profiles)
+}
+
+#[tauri::command]
+fn save_cloud_profile(input: AwsCredentialInput) -> Result<CloudProfile, String> {
+    let mut profiles = list_cloud_profiles()?;
+    let preview = credential_preview(&input.access_key_id);
+    
+    let profile = CloudProfile {
+        name: input.account_name.clone(),
+        provider: "aws".to_string(),
+        preview: preview.clone(),
+        default_region: input.default_region.clone(),
+    };
+
+    // Update or add
+    if let Some(existing) = profiles.iter_mut().find(|p| p.name == input.account_name) {
+        *existing = profile.clone();
+    } else {
+        profiles.push(profile.clone());
+    }
+
+    SecretVault::store_json(PROFILES_LIST_KEY, &profiles).map_err(|e| e.to_string())?;
+    
+    // Also store the full credentials in a specific profile file
+    let secret_key = format!("profile-{}", input.account_name);
+    SecretVault::store_json(&secret_key, &input).map_err(|e| e.to_string())?;
+
+    Ok(profile)
+}
+
+#[tauri::command]
+async fn fetch_aws_regions() -> Result<Vec<String>, String> {
+    let credentials = load_saved_credentials().map_err(|error| error.to_string())?;
+    let provider = provider_from_input(&credentials);
+    provider.list_regions().await.map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn switch_cloud_profile(name: String) -> Result<AwsCredentialSummary, String> {
+    let secret_key = format!("profile-{}", name);
+    let credentials = SecretVault::load_json::<AwsCredentialInput>(&secret_key)
+        .map_err(|_| format!("Profile '{}' not found or corrupted.", name))?;
+
+    // Set as active
+    save_aws_credentials(credentials)
+}
+
+#[tauri::command]
+fn delete_cloud_profile(name: String) -> Result<(), String> {
+    let mut profiles = list_cloud_profiles()?;
+    profiles.retain(|p| p.name != name);
+    SecretVault::store_json(PROFILES_LIST_KEY, &profiles).map_err(|e| e.to_string())?;
+    
+    let secret_key = format!("profile-{}", name);
+    let _ = SecretVault::delete(&secret_key);
+    Ok(())
+}
+
+#[tauri::command]
 fn clear_aws_credentials() -> Result<(), String> {
     SecretVault::delete(AWS_CREDENTIALS_KEY).map_err(|error| error.to_string())
 }
@@ -192,12 +288,12 @@ async fn test_aws_connection(
 }
 
 #[tauri::command]
-async fn fetch_instances() -> Result<DiscoveryResult, String> {
+async fn fetch_instances(region: Option<String>) -> Result<DiscoveryResult, String> {
     let credentials = load_saved_credentials().map_err(|error| error.to_string())?;
     let provider = provider_from_input(&credentials);
 
     provider
-        .fetch_instances()
+        .fetch_instances(region)
         .await
         .map_err(|error| error.to_string())
 }
@@ -333,6 +429,45 @@ async fn stop_instance(region: String, instance_id: String) -> Result<(), String
 }
 
 #[tauri::command]
+async fn reboot_instance(region: String, instance_id: String) -> Result<(), String> {
+    let credentials = load_saved_credentials().map_err(|error| error.to_string())?;
+    let provider = provider_from_input(&credentials);
+
+    provider
+        .reboot_instance(&region, &instance_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn fetch_instance_security_groups(
+    region: String,
+    instance_id: String,
+) -> Result<Vec<SecurityGroupSummary>, String> {
+    let credentials = load_saved_credentials().map_err(|error| error.to_string())?;
+    let provider = provider_from_input(&credentials);
+
+    provider
+        .fetch_security_groups(&region, &instance_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn fetch_instance_metrics(
+    region: String,
+    instance_id: String,
+) -> Result<ResourceMetrics, String> {
+    let credentials = load_saved_credentials().map_err(|error| error.to_string())?;
+    let provider = provider_from_input(&credentials);
+
+    provider
+        .fetch_metrics(&region, &instance_id)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn prepare_ssh_session(instance: InstanceSummary, username: String) -> Result<String, String> {
     let host = instance
         .public_ip
@@ -366,9 +501,22 @@ fn main() {
             read_terminal_output,
             write_terminal_input,
             close_terminal_session,
-            prepare_ssh_session
+            prepare_ssh_session,
+            reboot_instance,
+            fetch_instance_security_groups,
+            fetch_instance_metrics,
+            list_cloud_profiles,
+            save_cloud_profile,
+            switch_cloud_profile,
+            delete_cloud_profile,
+            fetch_aws_regions
         ])
         .setup(|app| {
+            // Initialize logging for development
+            if let Err(e) = ulgen_core::logging::init_dev() {
+                eprintln!("Failed to initialize logging: {e}");
+            }
+
             if let Some(window) = app.get_webview_window("main") {
                 apply_native_effects(&window);
             }
