@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
-import type { InstanceSummary } from "./useAws";
+import type { InstanceSummary } from "@/types/cloud";
 
 type TerminalSnapshot = {
   output: string;

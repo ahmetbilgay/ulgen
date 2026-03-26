@@ -1,23 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-
-export type InstanceSummary = {
-  id: string;
-  name: string;
-  region: string;
-  state: string;
-  public_ip?: string | null;
-  private_ip?: string | null;
-  instance_type?: string | null;
-  launched_at?: string | null;
-};
-
-export type DiscoveryResult = {
-  provider: string;
-  regions_scanned: string[];
-  instances: InstanceSummary[];
-  generated_at: string;
-};
+import type { DiscoveryResult } from "@/types/cloud";
 
 export function useAws(enabled = true) {
   const [data, setData] = useState<DiscoveryResult | null>(null);

@@ -139,11 +139,13 @@ fn load_aws_credentials() -> Result<AwsCredentialSummary, String> {
     match load_saved_credentials() {
         Ok(credentials) => Ok(AwsCredentialSummary {
             is_configured: true,
+            account_name: Some(credentials.account_name),
             access_key_preview: Some(credential_preview(&credentials.access_key_id)),
             default_region: Some(credentials.default_region),
         }),
         Err(_) => Ok(AwsCredentialSummary {
             is_configured: false,
+            account_name: None,
             access_key_preview: None,
             default_region: None,
         }),
@@ -156,6 +158,7 @@ fn save_aws_credentials(input: AwsCredentialInput) -> Result<AwsCredentialSummar
 
     Ok(AwsCredentialSummary {
         is_configured: true,
+        account_name: Some(input.account_name),
         access_key_preview: Some(credential_preview(&input.access_key_id)),
         default_region: Some(input.default_region),
     })

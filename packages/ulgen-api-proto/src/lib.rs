@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AwsCredentialInput {
+    pub account_name: String,
     pub access_key_id: String,
     pub secret_access_key: String,
     pub session_token: Option<String>,
@@ -13,6 +14,7 @@ pub struct AwsCredentialInput {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AwsCredentialSummary {
     pub is_configured: bool,
+    pub account_name: Option<String>,
     pub access_key_preview: Option<String>,
     pub default_region: Option<String>,
 }
