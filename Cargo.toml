@@ -32,6 +32,6 @@ toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1.18", features = ["serde", "v4"] }
-whoami = "1.4"
+whoami = "2.1"
 window-vibrancy = "0.6"
 tauri-plugin-dialog = "2.2"
