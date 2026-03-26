@@ -71,7 +71,7 @@ impl AwsProvider {
 
     pub async fn list_regions(&self) -> Result<Vec<String>> {
         let client = self.client_for_region(&self.default_region).await?;
-        let response = client.describe_regions().all_regions(true).send().await?;
+        let response = client.describe_regions().send().await?;
 
         let mut regions = response
             .regions
@@ -167,10 +167,8 @@ impl DiscoveryEngine {
             let provider = Arc::clone(&self.provider);
             let region = region.clone();
             tasks.spawn(async move {
-                provider
-                    .fetch_instances_in_region(region.clone())
-                    .await
-                    .map(|items| (region, items))
+                let result = provider.fetch_instances_in_region(region.clone()).await;
+                (region, result)
             });
         }
 
@@ -178,9 +176,18 @@ impl DiscoveryEngine {
         let mut instances = Vec::new();
 
         while let Some(joined) = tasks.join_next().await {
-            let (region, mut region_instances) = joined??;
-            discovered_regions.insert(region);
-            instances.append(&mut region_instances);
+            let (region, result) = joined?;
+
+            match result {
+                Ok(mut region_instances) => {
+                    discovered_regions.insert(region);
+                    instances.append(&mut region_instances);
+                }
+                Err(_error) => {
+                    // Skip inaccessible or opt-in-disabled regions so one region does not break the whole dashboard.
+                    continue;
+                }
+            }
         }
 
         instances.sort_by(|left, right| {

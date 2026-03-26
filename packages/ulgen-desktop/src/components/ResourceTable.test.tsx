@@ -12,6 +12,7 @@ describe("ResourceTable", () => {
           bg="#111827"
           border="rgba(255,255,255,0.08)"
           muted="#94a3b8"
+          activeRegion="eu-central-1"
           selectedInstanceId={null}
           onSelectInstance={() => {}}
           data={{
@@ -31,12 +32,24 @@ describe("ResourceTable", () => {
               },
             ],
           }}
+          instances={[
+            {
+              id: "i-123",
+              name: "prod-web",
+              region: "eu-central-1",
+              state: "running",
+              public_ip: "1.2.3.4",
+              private_ip: "10.0.0.10",
+              instance_type: "t3.micro",
+              launched_at: null,
+            },
+          ]}
         />
       </Provider>,
     );
 
     expect(screen.getByText("prod-web")).toBeInTheDocument();
-    expect(screen.getByText("eu-central-1")).toBeInTheDocument();
-    expect(screen.getByText("running")).toBeInTheDocument();
+    expect(screen.getByText("eu-central-1 inventory")).toBeInTheDocument();
+    expect(screen.getByText("State: running")).toBeInTheDocument();
   });
 });
