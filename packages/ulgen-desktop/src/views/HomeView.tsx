@@ -1,5 +1,5 @@
 import { Box, Heading, Text, SimpleGrid, Stack, Icon, Circle, HStack, VStack, Button, Badge } from "@chakra-ui/react";
-import { Activity, Server, Zap, Shield, Globe, Clock, AlertCircle, Plus, ArrowRight, Cloud, Lock, ShieldCheck } from "lucide-react";
+import { Activity, Server, Zap, Shield, Globe, Clock, AlertCircle, Plus, ArrowRight, Cloud, Lock, ShieldCheck, RefreshCw } from "lucide-react";
 import { PremiumCard } from "@/components/ui/PremiumCard";
 import { useAws } from "@/hooks/useAws";
 import { useConfigStore } from "@/store/useConfigStore";
@@ -12,7 +12,7 @@ const MotionBox = (motion as any).create ? (motion as any).create(Box) : motion(
 
 export function HomeView() {
   const { activeRegion, profiles, setShowAccountSettings, setCredentialForm } = useConfigStore();
-  const { data, isLoading } = useAws(profiles.length > 0);
+  const { data, isLoading, refresh } = useAws(profiles.length > 0);
   const navigate = useNavigate();
 
   const instances = data?.instances || [];
@@ -30,17 +30,27 @@ export function HomeView() {
 
   return (
     <Stack gap="10">
-      <Box px="2">
-        <Text fontSize="xs" fontWeight="black" color="blue.500" letterSpacing="0.4em" mb="2" textTransform="uppercase">
-          Operational Terminal
-        </Text>
-        <Heading size="4xl" fontWeight="900" letterSpacing="-0.04em" lineHeight="0.9">
-          Welcome back, Operator
-        </Heading>
-        <Text color="fg.muted" fontSize="lg" mt="4" fontWeight="medium">
-          {isLoading ? "Synchronizing cloud perimeter..." : `ULGEN is monitoring ${instances.length} instances across ${regionsCount} regions.`}
-        </Text>
-      </Box>
+      <HStack justify="space-between" align="flex-end" px="2">
+        <Box>
+          <Text fontSize="xs" fontWeight="black" color="blue.500" letterSpacing="0.4em" mb="2" textTransform="uppercase">
+            Operational Terminal
+          </Text>
+          <Heading size="4xl" fontWeight="900" letterSpacing="-0.04em" lineHeight="0.9">
+            Welcome back, Operator
+          </Heading>
+          <Text color="fg.muted" fontSize="lg" mt="4" fontWeight="medium">
+            {isLoading ? "Synchronizing cloud perimeter..." : `ULGEN is monitoring ${instances.length} instances across ${regionsCount} regions.`}
+          </Text>
+        </Box>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={refresh}
+          loading={isLoading}
+        >
+          <RefreshCw size={14} /> Refresh
+        </Button>
+      </HStack>
 
       {isLoading ? (
         <SimpleGrid columns={{ base: 1, md: 3 }} gap="6">
@@ -128,6 +138,7 @@ export function HomeView() {
             desc="Scan your open ports and security group rules." 
             icon={Shield} 
             color="red.500" 
+            onClick={() => navigate("/app/security")}
           />
         </SimpleGrid>
       </Box>
