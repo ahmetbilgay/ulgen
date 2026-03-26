@@ -4,12 +4,6 @@
 
 ULGEN is split into a local desktop runtime and a provider-focused Rust core.
 
-Project stewardship:
-
-- Maintainer: Ahmet Bilğay
-- Organization: Parevo
-- Website: [parevo.co](https://parevo.co)
-
 ```text
 React UI -> Tauri Commands -> ulgen-core -> Cloud Provider SDKs
                                 |

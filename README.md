@@ -4,8 +4,6 @@ ULGEN is a local-first sovereign infrastructure engine for cloud operations.
 
 Built in Rust, wrapped in Tauri, and designed to keep execution and credentials on the user machine by default.
 
-Maintained by Ahmet Bilğay at [Parevo](https://parevo.co).
-
 ## What ULGEN Is
 
 ULGEN aims to be a desktop control center for infrastructure operators who want:
@@ -142,17 +140,10 @@ React UI
 
 The UI should never call cloud SDKs directly.
 
-## Maintainer
-
-- Ahmet Bilğay
-- Company: Parevo
-- Website: [parevo.co](https://parevo.co)
-
 ## Documentation
 
 - [Architecture](./ARCHITECTURE.md)
 - [Contributing](./CONTRIBUTING.md)
-- [Security Policy](./SECURITY.md)
 - [Vision](./docs/vision.md)
 - [Local-First Model](./docs/local-first.md)
 - [Security Model](./docs/security.md)
