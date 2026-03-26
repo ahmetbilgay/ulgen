@@ -7,6 +7,8 @@ use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_config::meta::region::RegionProviderChain;
+use aws_credential_types::Credentials;
+use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_sdk_ec2::Client;
 use aws_sdk_ec2::config::Region;
 use aws_sdk_ec2::types::{
@@ -21,12 +23,34 @@ use crate::{CloudProvider, SecurityGroupRule};
 #[derive(Debug, Clone)]
 pub struct AwsProvider {
     default_region: String,
+    credentials: Option<SharedCredentialsProvider>,
 }
 
 impl AwsProvider {
     pub fn new(default_region: impl Into<String>) -> Self {
         Self {
             default_region: default_region.into(),
+            credentials: None,
+        }
+    }
+
+    pub fn with_credentials(
+        default_region: impl Into<String>,
+        access_key_id: impl Into<String>,
+        secret_access_key: impl Into<String>,
+        session_token: Option<String>,
+    ) -> Self {
+        let credentials = Credentials::new(
+            access_key_id,
+            secret_access_key,
+            session_token,
+            None,
+            "ulgen-local-keyring",
+        );
+
+        Self {
+            default_region: default_region.into(),
+            credentials: Some(SharedCredentialsProvider::new(credentials)),
         }
     }
 
@@ -35,15 +59,17 @@ impl AwsProvider {
             .or_default_provider()
             .or_else(Region::new(self.default_region.clone()));
 
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .region(region_provider)
-            .load()
-            .await;
+        let mut loader = aws_config::defaults(BehaviorVersion::latest()).region(region_provider);
+        if let Some(credentials) = &self.credentials {
+            loader = loader.credentials_provider(credentials.clone());
+        }
+
+        let config = loader.load().await;
 
         Ok(Client::new(&config))
     }
 
-    async fn list_regions(&self) -> Result<Vec<String>> {
+    pub async fn list_regions(&self) -> Result<Vec<String>> {
         let client = self.client_for_region(&self.default_region).await?;
         let response = client.describe_regions().all_regions(true).send().await?;
 
@@ -293,7 +319,7 @@ pub fn default_running_filter() -> Filter {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_cidr;
+    use super::{AwsProvider, normalize_cidr};
 
     #[test]
     fn normalizes_single_ip_to_cidr() {
@@ -303,5 +329,18 @@ mod tests {
     #[test]
     fn preserves_existing_cidr() {
         assert_eq!(normalize_cidr("203.0.113.0/24"), "203.0.113.0/24");
+    }
+
+    #[test]
+    fn builds_provider_with_static_credentials() {
+        let provider = AwsProvider::with_credentials(
+            "eu-central-1",
+            "AKIAEXAMPLE",
+            "secret",
+            Some("session".to_owned()),
+        );
+
+        assert_eq!(provider.default_region, "eu-central-1");
+        assert!(provider.credentials.is_some());
     }
 }

@@ -10,6 +10,10 @@ type NavigationSidebarProps = {
   muted: string;
   accent: string;
   soft: string;
+  text: string;
+  buttonBg: string;
+  buttonText: string;
+  buttonHoverBg: string;
 };
 
 export function NavigationSidebar({
@@ -22,6 +26,10 @@ export function NavigationSidebar({
   muted,
   accent,
   soft,
+  text,
+  buttonBg,
+  buttonText,
+  buttonHoverBg,
 }: NavigationSidebarProps) {
   return (
     <Box
@@ -50,26 +58,66 @@ export function NavigationSidebar({
             <Text textTransform="uppercase" letterSpacing="0.18em" fontSize="xs" fontWeight="bold" color={accent}>
               Sections
             </Text>
-            <Button justifyContent="start" borderRadius="full" bg={soft} borderWidth="1px" borderColor={border}>
+            <Button
+              justifyContent="start"
+              borderRadius="full"
+              bg={buttonBg}
+              color={buttonText}
+              borderWidth="1px"
+              borderColor={border}
+              _hover={{ bg: buttonHoverBg }}
+            >
               Resources
             </Button>
-            <Button justifyContent="start" borderRadius="full" bg={soft} borderWidth="1px" borderColor={border}>
+            <Button
+              justifyContent="start"
+              borderRadius="full"
+              bg={buttonBg}
+              color={buttonText}
+              borderWidth="1px"
+              borderColor={border}
+              _hover={{ bg: buttonHoverBg }}
+            >
               Activity
             </Button>
-            <Button justifyContent="start" borderRadius="full" bg={soft} borderWidth="1px" borderColor={border}>
+            <Button
+              justifyContent="start"
+              borderRadius="full"
+              bg={buttonBg}
+              color={buttonText}
+              borderWidth="1px"
+              borderColor={border}
+              _hover={{ bg: buttonHoverBg }}
+            >
               Terminal
             </Button>
           </Stack>
         </Stack>
 
         <Stack gap={3} mt={8}>
-          <Button borderRadius="full" bg={soft} borderWidth="1px" borderColor={border} onClick={() => void onRefresh()}>
+          <Button
+            borderRadius="full"
+            bg={buttonBg}
+            color={buttonText}
+            borderWidth="1px"
+            borderColor={border}
+            _hover={{ bg: buttonHoverBg }}
+            onClick={() => void onRefresh()}
+          >
             Rescan AWS
           </Button>
-          <Button borderRadius="full" bg={soft} borderWidth="1px" borderColor={border} onClick={onToggleTheme}>
+          <Button
+            borderRadius="full"
+            bg={buttonBg}
+            color={buttonText}
+            borderWidth="1px"
+            borderColor={border}
+            _hover={{ bg: buttonHoverBg }}
+            onClick={onToggleTheme}
+          >
             {isDark ? "Light mode" : "Dark mode"}
           </Button>
-          <Button variant="ghost" borderRadius="full" onClick={onExit}>
+          <Button variant="ghost" borderRadius="full" color={text} _hover={{ bg: soft }} onClick={onExit}>
             Welcome screen
           </Button>
         </Stack>

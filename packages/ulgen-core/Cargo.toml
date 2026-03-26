@@ -9,6 +9,7 @@ rust-version.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 aws-config.workspace = true
+aws-credential-types.workspace = true
 aws-sdk-ec2.workspace = true
 chrono.workspace = true
 keyring.workspace = true

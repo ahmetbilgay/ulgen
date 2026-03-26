@@ -12,6 +12,8 @@ describe("ResourceTable", () => {
           bg="#111827"
           border="rgba(255,255,255,0.08)"
           muted="#94a3b8"
+          selectedInstanceId={null}
+          onSelectInstance={() => {}}
           data={{
             provider: "aws",
             generated_at: new Date().toISOString(),

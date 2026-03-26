@@ -8,9 +8,20 @@ type ResourceTableProps = {
   bg: string;
   border: string;
   muted: string;
+  selectedInstanceId: string | null;
+  onSelectInstance: (instanceId: string) => void;
 };
 
-export function ResourceTable({ data, isLoading, error, bg, border, muted }: ResourceTableProps) {
+export function ResourceTable({
+  data,
+  isLoading,
+  error,
+  bg,
+  border,
+  muted,
+  selectedInstanceId,
+  onSelectInstance,
+}: ResourceTableProps) {
   if (isLoading) {
     return (
       <Box borderRadius="26px" p={6} bg={bg} borderWidth="1px" borderColor={border}>
@@ -71,7 +82,15 @@ export function ResourceTable({ data, isLoading, error, bg, border, muted }: Res
           <tbody>
             {data?.instances.length ? (
               data.instances.map((instance) => (
-                <tr key={`${instance.region}:${instance.id}`}>
+                <tr
+                  key={`${instance.region}:${instance.id}`}
+                  onClick={() => onSelectInstance(instance.id)}
+                  style={{
+                    cursor: "pointer",
+                    background:
+                      selectedInstanceId === instance.id ? "rgba(121, 210, 255, 0.10)" : "transparent",
+                  }}
+                >
                   <Cell border={border}>{instance.name}</Cell>
                   <Cell border={border}>{instance.region}</Cell>
                   <Cell border={border}>{instance.state}</Cell>

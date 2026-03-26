@@ -1,15 +1,23 @@
 import { Box, Heading, SimpleGrid, Text } from "@chakra-ui/react";
-import type { DiscoveryResult } from "../hooks/useAws";
+import type { DiscoveryResult, InstanceSummary } from "../hooks/useAws";
 
 type InspectorPanelProps = {
   data: DiscoveryResult | null;
+  selectedInstance: InstanceSummary | null;
   bg: string;
   border: string;
   muted: string;
   accent: string;
 };
 
-export function InspectorPanel({ data, bg, border, muted, accent }: InspectorPanelProps) {
+export function InspectorPanel({
+  data,
+  selectedInstance,
+  bg,
+  border,
+  muted,
+  accent,
+}: InspectorPanelProps) {
   const items = [
     { label: "Provider", value: data?.provider ?? "aws" },
     { label: "Regions", value: String(data?.regions_scanned.length ?? 0) },
@@ -28,6 +36,19 @@ export function InspectorPanel({ data, bg, border, muted, accent }: InspectorPan
       <Heading mt={2} size="lg">
         Inspector
       </Heading>
+      <Box mt={5} p={4} borderRadius="18px" borderWidth="1px" borderColor={border}>
+        <Text color={muted} fontSize="sm">
+          Selected instance
+        </Text>
+        <Text mt={1} fontWeight="bold">
+          {selectedInstance?.name ?? "No instance selected"}
+        </Text>
+        <Text mt={2} color={muted} fontSize="sm">
+          {selectedInstance
+            ? `${selectedInstance.region} · ${selectedInstance.state} · ${selectedInstance.public_ip ?? selectedInstance.private_ip ?? "no ip"}`
+            : "Choose an EC2 instance from the list to inspect connection details."}
+        </Text>
+      </Box>
       <SimpleGrid columns={1} gap={4} mt={5}>
         {items.map((item) => (
           <Box key={item.label}>
