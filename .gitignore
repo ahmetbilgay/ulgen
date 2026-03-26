@@ -1,0 +1,11 @@
+/target
+/dist
+/node_modules
+/packages/ulgen-desktop/node_modules
+/packages/ulgen-desktop/dist
+/packages/ulgen-desktop/playwright-report
+/packages/ulgen-desktop/test-results
+/.DS_Store
+/.env
+/.env.*
+!.env.example

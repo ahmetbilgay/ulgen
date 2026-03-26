@@ -1,0 +1,13 @@
+{
+  "name": "ulgen-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "npm --prefix packages/ulgen-desktop run tauri:dev",
+    "build": "cargo build --workspace && npm --prefix packages/ulgen-desktop run build",
+    "lint": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && npm --prefix packages/ulgen-desktop run typecheck",
+    "ci": "npm run lint && npm test && npm run test:e2e",
+    "test": "cargo test --workspace && npm --prefix packages/ulgen-desktop run test",
+    "test:e2e": "npm --prefix packages/ulgen-desktop run test:e2e"
+  }
+}

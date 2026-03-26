@@ -1,0 +1,24 @@
+[package]
+name = "ulgen-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+build = "src-tauri/build.rs"
+
+[[bin]]
+name = "ulgen-desktop"
+path = "src-tauri/src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2.2", features = [] }
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri.workspace = true
+tokio.workspace = true
+ulgen-api-proto = { path = "../ulgen-api-proto" }
+ulgen-core = { path = "../ulgen-core" }
+window-vibrancy.workspace = true

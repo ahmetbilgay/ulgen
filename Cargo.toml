@@ -1,0 +1,30 @@
+[workspace]
+members = [
+    "packages/ulgen-api-proto",
+    "packages/ulgen-core",
+    "packages/ulgen-desktop",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+version = "0.1.0"
+authors = ["ULGEN Contributors"]
+rust-version = "1.86"
+
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
+aws-config = "1.8"
+aws-sdk-ec2 = "1.108"
+chrono = { version = "0.4", features = ["serde"] }
+keyring = { version = "3.6", features = ["apple-native", "windows-native", "linux-native"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
+tauri = { version = "2.2", features = [] }
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "sync"] }
+tracing = "0.1"
+uuid = { version = "1.18", features = ["serde", "v4"] }
+window-vibrancy = "0.6"
